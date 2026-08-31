@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- Windows Forms comes along purely for Screen and NotifyIcon. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>Noty</AssemblyName>
+    <RootNamespace>Noty</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.0.0</Version>
+    <Product>Noty</Product>
+    <Company>Noty</Company>
+    <LangVersion>latest</LangVersion>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- WFAC010 tells WinForms apps to set the DPI mode in code. This is a WPF app
+         placing its own windows in device pixels, so PerMonitorV2 has to be declared
+         in the manifest, before any code runs. -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WPF and WinForms share type names (Color, Brush, TextBox...); WinForms is here
+         only for Screen and NotifyIcon, so its implicit usings are dropped. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.10" />
+  </ItemGroup>
+
+</Project>
