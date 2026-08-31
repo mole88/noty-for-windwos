@@ -22,7 +22,7 @@ the deck fans out.
 
 | Idle | Labelled tabs | Colour chips |
 |:---:|:---:|:---:|
-| <img src="photos/formatted/demo3.png" alt="Noty idle at the screen edge" width="180"> | <img src="photos/formatted/demo4.png" alt="Deck with labelled tabs" width="180"> | <img src="photos/formatted/demo5.png" alt="Deck with colour chips" width="180"> |
+| <img src="photos/formatted/demo3.png" alt="Noty idle at the screen edge" width="80"> | <img src="photos/formatted/demo4.png" alt="Deck with labelled tabs" width="80"> | <img src="photos/formatted/demo5.png" alt="Deck with colour chips" width="80"> |
 
 ## Features
 
