@@ -8,6 +8,11 @@ A Windows port of [aimen08/noty](https://github.com/aimen08/noty), built with
 No taskbar button, no window to manage. Move the pointer to the screen edge and
 the deck fans out.
 
+## Install
+
+Download the [latest release](https://github.com/mole88/noty-windows/releases/latest)
+and run `Noty-Setup-*.exe`.
+
 ## Demo
 
 ![Noty for Windows in action](photos/formatted/demo.gif)

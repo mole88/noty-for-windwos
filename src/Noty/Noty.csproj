@@ -11,7 +11,7 @@
     <AssemblyName>Noty</AssemblyName>
     <RootNamespace>Noty</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <Product>Noty</Product>
     <Company>Noty</Company>
     <LangVersion>latest</LangVersion>
