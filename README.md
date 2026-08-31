@@ -8,6 +8,22 @@ A Windows port of [aimen08/noty](https://github.com/aimen08/noty), built with
 No taskbar button, no window to manage. Move the pointer to the screen edge and
 the deck fans out.
 
+## Demo
+
+![Noty for Windows in action](photos/formatted/demo.gif)
+
+### Open notes
+
+| Tasks and colours | Notes in the deck |
+|---|---|
+| ![An open task note](photos/formatted/demo1.png) | ![An open note alongside the deck](photos/formatted/demo2.png) |
+
+### Deck states
+
+| Idle | Labelled tabs | Colour chips |
+|:---:|:---:|:---:|
+| <img src="photos/formatted/demo3.png" alt="Noty idle at the screen edge" width="180"> | <img src="photos/formatted/demo4.png" alt="Deck with labelled tabs" width="180"> | <img src="photos/formatted/demo5.png" alt="Deck with colour chips" width="180"> |
+
 ## Features
 
 - A compact edge deck with labelled tabs or colour chips
@@ -65,8 +81,16 @@ To create a self-contained executable:
 .\build.ps1 publish
 ```
 
-The result is written to `publish\Noty.exe`.
+The result is written to `publish\` together with the license.
+
+To build a Windows installer with Inno Setup 6 or 7:
+
+```powershell
+.\build.ps1 installer
+```
+
+The installer is written to `dist\Noty-Setup-1.0.0.exe`.
 
 ## License
 
-MIT, like the original project.
+MIT, like the original project. See [LICENSE](LICENSE).
