@@ -91,11 +91,26 @@ public static class DeckGeom
     /// to go.
     public static double ExpandedWidth => Math.Max(FanWidth, EditorWidth) + 22;
 
-    public static double PillHeight(int noteCount)
+    public static double PillHeight(int noteCount, double scale = 1)
     {
         var shown = Math.Min(noteCount, MaxDashes);
         var n = Math.Max(1, shown + (noteCount > MaxDashes ? 1 : 0));
-        return PillPad * 2 + n * DashHeight + (n - 1) * DashGap;
+
+        // WPF rounds every child and margin to a device pixel separately when
+        // layout rounding is enabled. Round the same components here so the
+        // explicit pill height cannot become shorter than its dash stack at a
+        // fractional Windows display scale.
+        return RoundToDevicePixels(PillPad, scale) * 2
+             + n * RoundToDevicePixels(DashHeight, scale)
+             + (n - 1) * RoundToDevicePixels(DashGap, scale);
+    }
+
+    private static double RoundToDevicePixels(double value, double scale)
+    {
+        if (scale <= 0 || double.IsNaN(scale) || double.IsInfinity(scale))
+            scale = 1;
+
+        return Math.Round(value * scale) / scale;
     }
 
     /// `allowOverflow` is set once the whole deck has been asked for: the tabs then

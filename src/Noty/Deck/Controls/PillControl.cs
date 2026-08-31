@@ -8,7 +8,7 @@ namespace Noty.Deck.Controls;
 /// At rest: a 12 px pill on the screen edge — one coloured dash per note.
 public sealed class PillControl : Border
 {
-    public PillControl(IReadOnlyList<Note> notes)
+    public PillControl(IReadOnlyList<Note> notes, double scale = 1)
     {
         var colours = new List<Brush>();
         if (notes.Count == 0)
@@ -30,7 +30,7 @@ public sealed class PillControl : Border
 
         Child = stack;
         Width = DeckGeom.PillWidth;
-        Height = DeckGeom.PillHeight(notes.Count);
+        Height = DeckGeom.PillHeight(notes.Count, scale);
         Padding = new Thickness(0, DeckGeom.PillPad, 0, DeckGeom.PillPad);
         CornerRadius = new CornerRadius(6);
         Background = new SolidColorBrush(Color.FromArgb(0xE0, 0x1C, 0x1C, 0x1E));

@@ -13,6 +13,66 @@
   <SolidColorBrush x:Key="MenuHighlight" Color="#1FFFFFFF" />
   <SolidColorBrush x:Key="MenuRule" Color="#1FFFFFFF" />
 
+  <!-- The note editor lives on coloured paper and must not inherit the stock WPF
+       scrollbar. The editor supplies NoteScrollThumbBrush from its active palette. -->
+  <Style x:Key="NoteScrollThumb" TargetType="Thumb">
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Thumb">
+          <Border x:Name="Grip"
+                  Background="{Binding Foreground,
+                                      RelativeSource={RelativeSource AncestorType={x:Type ScrollBar}}}"
+                  CornerRadius="2.5"
+                  Margin="1.5,2"
+                  Opacity="0.62" />
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Grip" Property="Opacity" Value="0.86" />
+            </Trigger>
+            <Trigger Property="IsDragging" Value="True">
+              <Setter TargetName="Grip" Property="Opacity" Value="1" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style x:Key="NoteScrollBar" TargetType="ScrollBar">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource NoteScrollThumbBrush}" />
+    <Setter Property="Width" Value="7" />
+    <Setter Property="MinWidth" Value="7" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ScrollBar">
+          <Grid Background="Transparent" Width="7">
+            <Track x:Name="PART_Track" IsDirectionReversed="True" Focusable="False">
+              <Track.DecreaseRepeatButton>
+                <RepeatButton Command="ScrollBar.PageUpCommand"
+                              Opacity="0" Focusable="False" IsTabStop="False" />
+              </Track.DecreaseRepeatButton>
+              <Track.Thumb>
+                <Thumb Style="{StaticResource NoteScrollThumb}" />
+              </Track.Thumb>
+              <Track.IncreaseRepeatButton>
+                <RepeatButton Command="ScrollBar.PageDownCommand"
+                              Opacity="0" Focusable="False" IsTabStop="False" />
+              </Track.IncreaseRepeatButton>
+            </Track>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="Orientation" Value="Horizontal">
+              <Setter Property="Height" Value="7" />
+              <Setter Property="Width" Value="Auto" />
+              <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- Shared by the context menu itself and by every submenu it opens. -->
   <Style x:Key="MenuSurface" TargetType="Border">
     <Setter Property="Background" Value="{StaticResource MenuPaper}" />

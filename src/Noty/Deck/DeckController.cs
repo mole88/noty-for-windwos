@@ -234,7 +234,8 @@ public sealed class DeckController : IDisposable
         {
             var s = _screen;
             var w = (int)Math.Round(Math.Max(DeckGeom.PillWidth + 2, Settings.EdgeWidth) * s.Scale);
-            var h = (int)Math.Round(DeckGeom.PillHeight(Math.Max(1, NoteStore.Shared.Active.Count)) * s.Scale);
+            var h = (int)Math.Round(DeckGeom.PillHeight(
+                Math.Max(1, NoteStore.Shared.Active.Count), s.Scale) * s.Scale);
             var top = s.Work.Top + (s.Work.Height - h) / 2;
             return new Win32.RECT
             {
@@ -329,9 +330,10 @@ public sealed class DeckController : IDisposable
         if (State.Phase == DeckPhase.Rest)
         {
             DropEditor();
-            var pill = new PillControl(active);
+            var pill = new PillControl(active, _screen.Scale);
             Canvas.SetLeft(pill, onRight ? w - DeckGeom.PillWidth - 1 : 1);
-            Canvas.SetTop(pill, Math.Max(0, (h - DeckGeom.PillHeight(active.Count)) / 2));
+            Canvas.SetTop(pill, Math.Max(0,
+                (h - DeckGeom.PillHeight(active.Count, _screen.Scale)) / 2));
             root.Children.Add(pill);
             return;
         }

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Markup;
@@ -56,6 +57,9 @@ public sealed class NoteTextBox : RichTextBox
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
         HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
         Padding = new Thickness(0);
+        if (Application.Current.TryFindResource("NoteScrollBar") is Style scrollBarStyle)
+            Resources[typeof(ScrollBar)] = scrollBarStyle;
+        ApplyScrollBarPalette();
         // The RichTextBox's own undo cannot survive a document rebuild, so Noty
         // keeps plain-text snapshots instead.
         IsUndoEnabled = false;
@@ -118,6 +122,7 @@ public sealed class NoteTextBox : RichTextBox
         _restyle.Stop();
         _palette = palette;
         _size = size;
+        ApplyScrollBarPalette();
         _lastText = text;
         _editSeries = null;
         _undo.Clear();
@@ -130,9 +135,13 @@ public sealed class NoteTextBox : RichTextBox
     {
         _palette = palette;
         _size = size;
+        ApplyScrollBarPalette();
         CaretBrush = palette.InkBrush;
         Restyle();
     }
+
+    private void ApplyScrollBarPalette() =>
+        Resources["NoteScrollThumbBrush"] = _palette.DashAt(0.78);
 
     private void Restyle()
     {

@@ -9,11 +9,13 @@ namespace Noty.Editor;
 /// Renders the plain-text body into a FlowDocument: ticked-off tasks struck through
 /// and dimmed, and inline Markdown styled in place.
 ///
-/// The source stays plain text. The original collapses Markdown punctuation to zero
-/// width through NSLayoutManager; WPF has no equivalent, so markers are dimmed
-/// instead — which is what the original's README describes anyway.
+/// The source stays plain text. Markdown punctuation is kept in the document so
+/// editing and export still see it, but its runs are made transparent and nearly
+/// zero-width in the rendered note.
 public static class Styler
 {
+    private const double HiddenMarkerSize = 0.1;
+
     private readonly record struct CharStyle(
         bool Bold, bool Italic, bool Code, bool Strike, bool Dim);
 
@@ -63,27 +65,33 @@ public static class Styler
         if (Settings.MarkdownStyling && line.Length > 0)
         {
             // # heading — bigger and bolder, hashes dimmed
-            var heading = Regex.Match(line, @"^(#{1,6})[ \t]+(.+)$");
+            var heading = Regex.Match(line, @"^(#{1,6})([ \t]*)(\S.*)$");
             if (heading.Success)
             {
                 var level = heading.Groups[1].Length;
                 fontSize = Ink.BodySize(size) + Math.Max(1.5, 7 - level * 1.1);
                 lineBold = true;
                 Dim(attrs, heading.Groups[1]);
+                Dim(attrs, heading.Groups[2]);
             }
 
             // > quote
-            var quote = Regex.Match(line, @"^>[ \t]?(.*)$");
+            var quote = Regex.Match(line, @"^(>)([ \t]?)(.*)$");
             if (quote.Success)
             {
                 alpha = Math.Min(alpha, 0.62);
                 lineItalic = true;
-                Dim(attrs, 0, 1);
+                Dim(attrs, quote.Groups[1]);
+                Dim(attrs, quote.Groups[2]);
             }
 
             // - bullet
-            var bullet = Regex.Match(line, @"^[ \t]*([-*+])[ \t]+");
-            if (bullet.Success) Dim(attrs, bullet.Groups[1]);
+            var bullet = Regex.Match(line, @"^([ \t]*)([-*+])([ \t]+)");
+            if (bullet.Success)
+            {
+                Dim(attrs, bullet.Groups[2]);
+                Dim(attrs, bullet.Groups[3]);
+            }
 
             // **bold** / __bold__
             foreach (Match m in Regex.Matches(line, @"(\*\*|__)(?=\S)(.+?)(?<=\S)\1"))
@@ -110,12 +118,14 @@ public static class Styler
                 Dim(attrs, m.Index + m.Length - 1, 1);
             }
 
-            // ~~struck~~
-            foreach (Match m in Regex.Matches(line, @"~~(?=\S)(.+?)(?<=\S)~~"))
+            // ~~struck~~; matching the delimiter length also handles ~~~text~~~.
+            foreach (Match m in Regex.Matches(line,
+                         @"(?<marker>~{2,})(?=\S)(?<body>.+?)(?<=\S)\k<marker>"))
             {
-                Apply(attrs, m.Groups[1], a => a with { Strike = true });
-                Dim(attrs, m.Index, 2);
-                Dim(attrs, m.Index + m.Length - 2, 2);
+                var markerLength = m.Groups["marker"].Length;
+                Apply(attrs, m.Groups["body"], a => a with { Strike = true });
+                Dim(attrs, m.Index, markerLength);
+                Dim(attrs, m.Index + m.Length - markerLength, markerLength);
             }
         }
 
@@ -129,7 +139,6 @@ public static class Styler
         }
 
         var body = NoteColor.Tint(ink, alpha);
-        var faint = NoteColor.Tint(ink, 0.32);
         var codeBg = NoteColor.Tint(ink, 0.07);
 
         // The ☐ and ☑ come from whatever font happens to carry them, and a hand like
@@ -154,7 +163,8 @@ public static class Styler
             var a = attrs[start];
             var run = new Run(line[start..i])
             {
-                Foreground = a.Dim ? faint : body,
+                Foreground = a.Dim ? Brushes.Transparent : body,
+                FontSize = a.Dim ? HiddenMarkerSize : fontSize,
                 FontWeight = a.Bold || lineBold ? FontWeights.Bold : FontWeights.Normal,
                 FontStyle = a.Italic || lineItalic ? FontStyles.Italic : FontStyles.Normal,
             };
