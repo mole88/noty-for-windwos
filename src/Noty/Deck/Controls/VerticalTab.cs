@@ -57,7 +57,6 @@ public sealed class VerticalTab : DeckButton
         RenderTransformOrigin = new Point(onRight ? 1 : 0, 0.5);
         RenderTransform = new RotateTransform(DeckGeom.Lean(onRight));
 
-        ToolTip = note.DisplayTitle;
     }
 
     /// A label turned on its side. LayoutTransform (not RenderTransform) is what

@@ -42,6 +42,12 @@ public static class Styler
         return doc;
     }
 
+    /// One line, styled on its own. Nothing about a line's appearance depends on the
+    /// lines around it, which is what lets the editor restyle only what changed
+    /// instead of rebuilding the whole note after every keystroke.
+    public static Paragraph BuildLine(string line, NoteColor palette, double size) =>
+        Line(line.TrimEnd('\r'), palette, size);
+
     private static Paragraph Line(string line, NoteColor palette, double size)
     {
         var p = new Paragraph { Margin = new Thickness(0) };

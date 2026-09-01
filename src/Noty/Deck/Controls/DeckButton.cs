@@ -16,6 +16,10 @@ public abstract class DeckButton : Grid
     /// Press and hold, then drag up or down the deck. A long press rather than a
     /// movement threshold, so a tab that drifts a couple of pixels under the click
     /// still just opens.
+    /// Raised as the pointer arrives on and leaves the tab, so the deck can offer a
+    /// preview of what is on it.
+    public event EventHandler<bool>? HoverChanged;
+
     public event EventHandler? DragStarted;
     public event EventHandler<double>? DragDelta;
     public event EventHandler<double>? DragCompleted;
@@ -26,6 +30,14 @@ public abstract class DeckButton : Grid
 
     private static readonly TimeSpan HoldToDrag = TimeSpan.FromMilliseconds(280);
 
+    /// How far the pointer must travel with the button down before the tab starts
+    /// following it. Small enough to feel immediate, large enough that a click with
+    /// a shaky hand is still a click.
+    private const double DragThreshold = 3;
+
+    /// A drag that ended this close to where it began was a click after all.
+    public const double ClickSlop = 6;
+
     private bool _pressed;
     private Point _origin;
     private DispatcherTimer? _hold;
@@ -34,8 +46,13 @@ public abstract class DeckButton : Grid
     {
         Background = Brushes.Transparent;   // blank areas still take the click
         Cursor = Cursors.Hand;
-        MouseEnter += (_, _) => OnHover(true);
-        MouseLeave += (_, _) => { OnHover(false); if (!Dragging) SetPressed(false); };
+        MouseEnter += (_, _) => { OnHover(true); HoverChanged?.Invoke(this, true); };
+        MouseLeave += (_, _) =>
+        {
+            OnHover(false);
+            HoverChanged?.Invoke(this, false);
+            if (!Dragging) SetPressed(false);
+        };
         PreviewMouseLeftButtonDown += (_, e) =>
         {
             SetPressed(true);
@@ -49,8 +66,21 @@ public abstract class DeckButton : Grid
         };
         PreviewMouseMove += (_, e) =>
         {
-            if (!Dragging) return;
-            DragDelta?.Invoke(this, e.GetPosition(null).Y - _origin.Y);
+            // The plus and the "+N" tab are buttons, not tabs: nothing subscribes to
+            // their drag, and starting one would swallow the click that follows.
+            if (DragStarted is null) return;
+            if (!_pressed && !Dragging) return;
+            var dy = e.GetPosition(null).Y - _origin.Y;
+
+            // Moving with the button down starts the drag at once. Waiting out a hold
+            // first made the deck feel heavy: the tab did not follow the pointer
+            // until the timer had run, so the first part of every drag was dead.
+            if (!Dragging)
+            {
+                if (Math.Abs(dy) < DragThreshold) return;
+                BeginDrag();
+            }
+            DragDelta?.Invoke(this, dy);
         };
         PreviewMouseLeftButtonUp += (_, e) =>
         {
@@ -93,15 +123,22 @@ public abstract class DeckButton : Grid
     {
         if (DragStarted is null) return;    // nothing wants a drag from this one
         CancelHold();
+        // Holding still also picks the tab up, so it can be lifted before it is moved.
         _hold = new DispatcherTimer { Interval = HoldToDrag };
         _hold.Tick += (_, _) =>
         {
             CancelHold();
-            if (!_pressed) return;
-            Dragging = true;
-            DragStarted?.Invoke(this, EventArgs.Empty);
+            if (!_pressed || Dragging) return;
+            BeginDrag();
         };
         _hold.Start();
+    }
+
+    private void BeginDrag()
+    {
+        CancelHold();
+        Dragging = true;
+        DragStarted?.Invoke(this, EventArgs.Empty);
     }
 
     private void CancelHold()

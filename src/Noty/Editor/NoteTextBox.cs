@@ -5,6 +5,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using Noty.Core;
 using Noty.Interop;
@@ -64,10 +65,9 @@ public sealed class NoteTextBox : RichTextBox
         IsUndoEnabled = false;
         Document = new FlowDocument();
 
-        // Restyling replaces the document under the caret, so it waits for a real
-        // pause in typing. At a couple of hundred milliseconds it fired between
-        // ordinary keystrokes and swallowed some of them.
-        _restyle = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        // Only the changed lines are rebuilt now, so styling can follow typing much
+        // more closely than the whole-document pass could afford to.
+        _restyle = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
         _restyle.Tick += (_, _) =>
         {
             _restyle.Stop();
@@ -78,6 +78,59 @@ public sealed class NoteTextBox : RichTextBox
         DataObject.AddPastingHandler(this, OnPasting);
 
         EnableSpellCheck();
+
+        Loaded += (_, _) => HookInputMethod();
+        Unloaded += (_, _) => UnhookInputMethod();
+    }
+
+    // MARK: Input methods
+    //
+    // Chinese, Japanese and Korean are typed in two stages: an unfinished composition
+    // sits in the view until it is committed. Swapping the document out underneath it
+    // — which is what restyling does — throws that composition away, and the text is
+    // simply lost. So nothing may rebuild the document while one is in flight; the
+    // pass is held until the composition is committed.
+
+    private const int WM_IME_STARTCOMPOSITION = 0x010D;
+    private const int WM_IME_ENDCOMPOSITION = 0x010E;
+
+    private HwndSource? _source;
+    private bool _composing;
+    private bool _restylePending;
+
+    private void HookInputMethod()
+    {
+        _source = PresentationSource.FromVisual(this) as HwndSource;
+        _source?.AddHook(OnImeMessage);
+    }
+
+    private void UnhookInputMethod()
+    {
+        _source?.RemoveHook(OnImeMessage);
+        _source = null;
+        _composing = false;
+    }
+
+    private IntPtr OnImeMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        switch (msg)
+        {
+            case WM_IME_STARTCOMPOSITION:
+                _composing = true;
+                _restyle.Stop();
+                break;
+            case WM_IME_ENDCOMPOSITION:
+                _composing = false;
+                if (_restylePending)
+                {
+                    _restylePending = false;
+                    // After the composition has been committed, not in the middle of
+                    // the message that commits it.
+                    Dispatcher.BeginInvoke(Restyle, DispatcherPriority.Background);
+                }
+                break;
+        }
+        return IntPtr.Zero;
     }
 
     /// Spell-checking follows the text, not the keyboard.
@@ -185,22 +238,91 @@ public sealed class NoteTextBox : RichTextBox
         CaretBrush = palette.InkBrush;
     }
 
+    /// A change of appearance — face, size, colour — repaints every line, since none
+    /// of them differ in text and the incremental pass would find nothing to do.
     public void Restyle(NoteColor palette, double size)
     {
         _palette = palette;
         _size = size;
         ApplyScrollBarPalette();
         CaretBrush = palette.InkBrush;
-        Restyle();
+        if (_composing)
+        {
+            _restylePending = true;
+            return;
+        }
+        Rebuild(PlainText, CaretIndex);
     }
 
     private void ApplyScrollBarPalette() =>
         Resources["NoteScrollThumbBrush"] = _palette.DashAt(0.78);
 
+    // MARK: Restyling — only the lines that changed
+    //
+    // Rebuilding the whole document after every edit gets more expensive the longer
+    // the note is, and it replaces the paragraph the caret is sitting in for no
+    // reason. Nothing about a line's appearance depends on its neighbours, so only
+    // the lines that actually differ are rebuilt.
+
+    private string[] _rendered = Array.Empty<string>();
+
     private void Restyle()
     {
-        var text = PlainText;
-        Rebuild(text, CaretIndex);
+        if (_composing)
+        {
+            // The document must not be touched while an input method is composing —
+            // see OnImeMessage.
+            _restylePending = true;
+            return;
+        }
+
+        var next = PlainText.Split('\n');
+        var blocks = Document.Blocks;
+        if (_rendered.Length != blocks.Count)
+        {
+            // The document and the shadow copy disagree; only a full pass is safe.
+            Rebuild(string.Join("\n", next), CaretIndex);
+            return;
+        }
+
+        // Common prefix and suffix, so an edit in the middle of a note leaves the
+        // paragraphs on either side of it alone.
+        var head = 0;
+        while (head < _rendered.Length && head < next.Length && _rendered[head] == next[head]) head++;
+
+        var tail = 0;
+        while (tail < _rendered.Length - head && tail < next.Length - head &&
+               _rendered[^(tail + 1)] == next[^(tail + 1)]) tail++;
+
+        if (head == _rendered.Length && head == next.Length) return;   // nothing moved
+
+        var caret = CaretIndex;
+        var oldEnd = _rendered.Length - tail;
+        var newEnd = next.Length - tail;
+
+        _suspend = true;
+        try
+        {
+            var all = blocks.ToList();
+            var anchor = head > 0 ? all[head - 1] : null;
+
+            for (var i = head; i < oldEnd; i++) blocks.Remove(all[i]);
+
+            for (var i = newEnd - 1; i >= head; i--)
+            {
+                var paragraph = Styler.BuildLine(next[i], _palette, _size);
+                if (anchor is not null) blocks.InsertAfter(anchor, paragraph);
+                else if (blocks.FirstBlock is { } first) blocks.InsertBefore(first, paragraph);
+                else blocks.Add(paragraph);
+            }
+
+            _rendered = next;
+            CaretIndex = Math.Clamp(caret, 0, PlainText.Length);
+        }
+        finally
+        {
+            _suspend = false;
+        }
     }
 
     private void Rebuild(string text, int caret)
@@ -214,6 +336,7 @@ public sealed class NoteTextBox : RichTextBox
         try
         {
             Document = Styler.Build(text, _palette, _size);
+            _rendered = text.Split('\n');
             CaretIndex = Math.Clamp(caret, 0, text.Length);
         }
         finally

@@ -20,6 +20,8 @@ public static class Settings
         public double EdgeWidth { get; set; } = 14;
         public bool MarkdownStyling { get; set; } = true;
         public DeckStyle DeckStyle { get; set; } = DeckStyle.Tabs;
+        public bool KeepFanned { get; set; }
+        public double DeckScale { get; set; } = 1.0;
 
         public Shortcut ScNewNote { get; set; } = new(ModifierKeys.Control | ModifierKeys.Alt, Key.N);
         public Shortcut ScAllNotes { get; set; } = new(ModifierKeys.Control | ModifierKeys.Alt, Key.A);
@@ -170,6 +172,25 @@ public static class Settings
     {
         get => M.DeckStyle;
         set { M.DeckStyle = value; Save(); }
+    }
+
+    /// Make the fan the resting state instead of the pill, so the tabs and their
+    /// labels stay on the edge without being hovered first.
+    public static bool KeepFanned
+    {
+        get => M.KeepFanned;
+        set { M.KeepFanned = value; Save(); }
+    }
+
+    /// One multiplier behind every deck metric — tab width, the lap between tabs, the
+    /// label type, the chips and the resting pill — so the deck grows without
+    /// drifting out of proportion with itself.
+    public const double DeckScaleMin = 0.7, DeckScaleMax = 1.8;
+
+    public static double DeckScale
+    {
+        get => M.DeckScale is >= DeckScaleMin and <= DeckScaleMax ? M.DeckScale : 1.0;
+        set { M.DeckScale = Math.Clamp(value, DeckScaleMin, DeckScaleMax); Save(); }
     }
 
     // MARK: Shortcuts

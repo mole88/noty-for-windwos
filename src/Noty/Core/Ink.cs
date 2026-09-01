@@ -54,7 +54,9 @@ public static class Ink
 
     // Tab labels use the same face a shade bolder, so they hold up turned on their
     // side at this size.
-    public const double TabSize = 9.5;
+    private const double BaseTabSize = 9.5;
+    /// The label type grows with the deck, so a bigger deck is actually readable.
+    public static double TabSize => BaseTabSize * Settings.DeckScale;
     public const double TabTracking = 0.1;
 
     public static FontFamily TabFamily => BodyFamily;

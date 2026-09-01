@@ -122,6 +122,30 @@ public sealed class SettingsWindow : Window
         };
         _body.Children.Add(Labelled("Deck style", style));
 
+        var scale = new Slider
+        {
+            Minimum = Settings.DeckScaleMin,
+            Maximum = Settings.DeckScaleMax,
+            Value = Settings.DeckScale,
+            TickFrequency = 0.05,
+            IsSnapToTickEnabled = true,
+            Margin = new Thickness(0, 4, 0, 10),
+        };
+        var scaleLabel = new TextBlock
+        {
+            Text = $"{Settings.DeckScale * 100:0} %",
+            Foreground = NoteColor.Tint(Colors.White, 0.6),
+            FontSize = 11,
+        };
+        scale.ValueChanged += (_, e) =>
+        {
+            Actions.SetDeckScale(e.NewValue);
+            scaleLabel.Text = $"{e.NewValue * 100:0} %";
+        };
+        _body.Children.Add(Labelled("Deck size", scale, scaleLabel));
+
+        _body.Children.Add(Toggle("Keep the deck fanned out", Settings.KeepFanned,
+            _ => Actions.ToggleKeepFanned()));
         _body.Children.Add(Toggle("Dock the deck to the left edge", Settings.DeckOnLeftEdge,
             _ => Actions.ToggleDeckEdge()));
         _body.Children.Add(Toggle("Keep the deck over full-screen apps", Settings.ShowOverFullScreen,

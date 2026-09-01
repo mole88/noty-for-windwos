@@ -31,6 +31,8 @@ public sealed class DeckController : IDisposable
     private string? _editorNoteId;
     private int _editorColor = -1;
     private bool _editorOnRight;
+    /// Where the open note was placed when it opened — see Render.
+    private double? _editorTop;
 
     // Only a note opened directly from the New Note action is disposable. An old
     // note that happens to contain no visible text must not vanish merely because
@@ -86,6 +88,7 @@ public sealed class DeckController : IDisposable
 
         _window.Show();
         Layout();
+        if (Settings.KeepFanned) State = DeckState.Fan;
         Render();
 
         NoteStore.Shared.NotesChanged += OnNotesChanged;
@@ -184,6 +187,9 @@ public sealed class DeckController : IDisposable
             NoteActivity();
             return;
         }
+        // A fan that is the resting state has nothing to tidy itself away to.
+        if (State.Phase == DeckPhase.Fan && Settings.KeepFanned) return;
+
         var now = Screens.Cursor;
         if (State.Phase == DeckPhase.Fan && !HotZone.Contains(now))
         {
@@ -269,18 +275,22 @@ public sealed class DeckController : IDisposable
         _editor?.FocusText();
     }
 
+    /// What the deck falls back to when nothing is open. Normally the pill; with
+    /// "keep the deck fanned" the tabs stay out on the edge instead.
+    private DeckState Resting => Settings.KeepFanned ? DeckState.Fan : DeckState.Rest;
+
     /// Closing a note steps back to the deck — the tabs stay where they were. Only
     /// leaving the deck entirely puts it back to sleep.
     public void Collapse()
     {
         if (State.ExpandedId is not null) SetState(DeckState.Fan);
-        else SetState(DeckState.Rest);
+        else SetState(Resting);
     }
 
     /// Dismiss the whole deck, note and tabs together.
-    public void Dismiss() => SetState(DeckState.Rest);
+    public void Dismiss() => SetState(Resting);
 
-    public void CollapseToRest() => SetState(DeckState.Rest);
+    public void CollapseToRest() => SetState(Resting);
 
     private bool OpenNoteIsPinned =>
         State.ExpandedId is { } id && (NoteStore.Shared.Get(id)?.Pinned ?? false);
@@ -314,6 +324,8 @@ public sealed class DeckController : IDisposable
     private void RenderCore()
     {
         var root = _window.Root;
+        // A card belongs to a tab that is about to be rebuilt, so it goes with it.
+        HidePreview();
         // Everything except the open note goes. Detaching the note — even to put it
         // straight back — pulls a focused text view out of the visual tree, and the
         // keystrokes that land while it is out are simply lost. The deck redraws on
@@ -410,6 +422,11 @@ public sealed class DeckController : IDisposable
             }
             tab.Click += (_, _) => Toggle(note.Id);
             AttachDrag(tab, note, lay);
+            // The tab's whole rectangle, not just the strip left uncovered by the
+            // next one: that rectangle is the sheet the peek has to line up with.
+            AttachPreview(tab, note, y, Settings.DeckStyle == DeckStyle.Compact
+                ? DeckGeom.ChipHeight
+                : lay.ItemHeight);
             AttachNoteMenu(tab, note);
             // Placed by the width the deck reserves, not the width the tab draws:
             // the extra bleed runs off the screen edge, so the lean cannot open a
@@ -485,10 +502,17 @@ public sealed class DeckController : IDisposable
                 _editorOnRight = onRight;
                 _editorIsEmptyDraft = emptyDraft;
                 _pendingEmptyDraftId = null;
+                _editorTop = null;
             }
 
+            // The note is placed level with its tab once, when it opens, and then
+            // stays put. Its tab's position depends on the longest label on the
+            // deck, and the label is the note's own first line — so re-deriving the
+            // position on every redraw made the note slide up or down a second after
+            // a title was typed.
             var idx = visible.FindIndex(n => n.Id == openId);
-            var top = EditorTop(lay, idx < 0 ? 0 : idx);
+            var top = _editorTop ??= EditorTop(lay, idx < 0 ? 0 : idx);
+            top = Math.Min(Math.Max(10, top), Math.Max(10, h - DeckGeom.EditorHeight - 10));
             Canvas.SetLeft(editor, onRight ? w - DeckGeom.EditorWidth : 0);
             Canvas.SetTop(editor, top);
             // A reused editor was never detached, so it keeps its place in the child
@@ -534,12 +558,170 @@ public sealed class DeckController : IDisposable
         Canvas.SetTop(_stack, -_scroll);
     }
 
+    // MARK: Preview cards
+    //
+    // Resting on a tab peeks at what is on it. Shown after a beat, so running the
+    // pointer down the deck does not throw a card at every tab on the way past.
+
+    /// Long enough that the pointer crossing the deck on its way somewhere else does
+    /// not leave a trail of sheets behind it, and no longer.
+    private static readonly TimeSpan PreviewDelay = TimeSpan.FromMilliseconds(120);
+
+    private DispatcherTimer? _previewTimer;
+    private DeckButton? _previewTab;
+    private PreviewCard? _previewCard;
+    private string? _previewNoteId;
+
+    private void AttachPreview(DeckButton tab, Note note, double top, double height)
+    {
+        tab.HoverChanged += (_, hovering) =>
+        {
+            if (!hovering)
+            {
+                if (_previewNoteId == note.Id) HidePreview();
+                return;
+            }
+            if (tab.Dragging || State.ExpandedId is not null) return;
+
+            // Once one sheet is out, moving along the deck swaps to the next with no
+            // wait at all — the pointer has already shown it is reading the tabs.
+            if (_previewCard is not null && _previewNoteId != note.Id)
+            {
+                _previewTimer?.Stop();
+                _previewTimer = null;
+                ShowPreview(tab, note, top, height);
+                return;
+            }
+
+            _previewTimer?.Stop();
+            _previewTimer = new DispatcherTimer { Interval = PreviewDelay };
+            _previewTimer.Tick += (_, _) =>
+            {
+                _previewTimer?.Stop();
+                _previewTimer = null;
+                if (!tab.IsMouseOver || tab.Dragging || State.ExpandedId is not null) return;
+                ShowPreview(tab, note, top, height);
+            };
+            _previewTimer.Start();
+        };
+    }
+
+    /// The sheet is anchored to the screen edge, where the tab it belongs to is
+    /// anchored, and covers it — so it is not a card beside the deck but the tab's
+    /// own paper, swung out far enough to read.
+    ///
+    /// It opens the way paper does: hinged on the edge it is stuck to, unfolding
+    /// from a steeper lean than the deck's onto exactly the deck's lean. Sliding a
+    /// rigid rectangle past the tabs read as a window; turning about the same anchor
+    /// the tabs turn about reads as one sheet with them.
+    private void ShowPreview(DeckButton tab, Note note, double tabTop, double tabHeight)
+    {
+        HidePreview();
+        if (NoteStore.Shared.Get(note.Id) is not { } fresh) return;
+
+        var onRight = OnRight;
+        var w = _window.Root.Width;
+        var h = Math.Max(1, _panelHeight);
+
+        // The sheet occupies its tab's own rectangle exactly — same top, same height.
+        // Anything else leaves a step where the two meet at the screen edge, and,
+        // worse, puts the hinge in a different place, so the sheet settles onto a
+        // lean that no longer lines up with the tab it grew out of.
+        var top = tabTop - _scroll;
+        var sheetHeight = tabHeight;
+
+        // A colour chip has no height worth reading in, so there the sheet takes
+        // what it needs and centres on the chip instead.
+        if (sheetHeight < MinSheetHeight)
+        {
+            var probe = new PreviewCard(fresh, onRight);
+            probe.Measure(new Size(PreviewCard.CardWidth + DeckGeom.Bleed, h));
+            var wanted = Math.Max(MinSheetHeight, probe.DesiredSize.Height);
+            top += tabHeight / 2 - wanted / 2;
+            sheetHeight = wanted;
+        }
+
+        var card = new PreviewCard(fresh, onRight) { Height = sheetHeight };
+        _previewCard = card;
+        _previewNoteId = note.Id;
+
+        // Flush to the screen edge, like the tab and like the open note; the bleed
+        // runs off the edge.
+        Canvas.SetLeft(card, onRight ? w - PreviewCard.CardWidth : -DeckGeom.Bleed);
+        Canvas.SetTop(card, top);
+
+        Panel.SetZIndex(card, 5);
+        _window.Root.Children.Add(card);
+
+        var lean = DeckGeom.Lean(onRight);
+        var scale = new ScaleTransform(FoldedWidth, 1);
+        var turn = new RotateTransform(lean + (onRight ? FoldedLean : -FoldedLean));
+
+        // Both transforms hinge on the edge the deck is stuck to, which is the same
+        // anchor every tab leans about.
+        card.RenderTransformOrigin = new Point(onRight ? 1 : 0, 0.5);
+        card.RenderTransform = new TransformGroup { Children = { scale, turn } };
+        card.Opacity = 0;
+
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty,
+            new DoubleAnimation(1, TimeSpan.FromMilliseconds(200))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            });
+        turn.BeginAnimation(RotateTransform.AngleProperty,
+            new DoubleAnimation(lean, TimeSpan.FromMilliseconds(260))
+            {
+                // A touch of overshoot, so the sheet settles onto the deck's lean
+                // rather than arriving at it.
+                EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.35 },
+            });
+        card.BeginAnimation(UIElement.OpacityProperty,
+            new DoubleAnimation(1, TimeSpan.FromMilliseconds(90)));
+
+        // The tab is the edge of this very sheet, so it gets out of the way rather
+        // than showing through the paper and poking out around it while the sheet is
+        // still turning. Opacity, not Visibility: a hidden element takes no mouse
+        // input, the tab would stop counting as hovered, and the sheet it had just
+        // asked for would close it again — on and off for as long as you pointed at
+        // it. At zero opacity the tab is still there to be hovered.
+        _previewTab = tab;
+        tab.BeginAnimation(UIElement.OpacityProperty,
+            new DoubleAnimation(0, TimeSpan.FromMilliseconds(90)));
+    }
+
+    /// How far folded back against the edge the sheet starts: a fraction of its
+    /// width, and a few degrees steeper than the deck leans.
+    private const double FoldedWidth = 0.62;
+    private const double FoldedLean = 7;
+
+    /// Below this a tab is a colour chip, not a sheet with a readable edge.
+    private const double MinSheetHeight = 96;
+
+    private void HidePreview()
+    {
+        _previewTimer?.Stop();
+        _previewTimer = null;
+        if (_previewCard is not null) _window.Root.Children.Remove(_previewCard);
+        if (_previewTab is not null)
+        {
+            // Clear the animation before restoring, or the held value wins.
+            _previewTab.BeginAnimation(UIElement.OpacityProperty, null);
+            _previewTab.Opacity = 1;
+        }
+        _previewTab = null;
+        _previewCard = null;
+        _previewNoteId = null;
+    }
+
     /// Press and hold a tab, then drag it up or down to reshuffle the deck.
     private void AttachDrag(DeckButton tab, Note note, DeckLayout lay)
     {
         tab.DragStarted += (_, _) =>
         {
             NoteActivity();
+            // The peek is the tab standing in for itself; picking the tab up ends
+            // that, and puts the tab back on screen to be dragged.
+            HidePreview();
             // Only the tab being dragged is raised. Lifting every tab would reorder
             // neighbours and break the shingle; the rest keep their paint order.
             Panel.SetZIndex(tab, 900);
@@ -558,6 +740,10 @@ public sealed class DeckController : IDisposable
             tab.SetDragOffset(0);
             var slots = (int)Math.Round(dy / Math.Max(1, lay.Pitch));
             if (slots != 0) NoteStore.Shared.Reorder(note.Id, slots);
+            // The drag now starts on the first few pixels of movement, so a click
+            // with an unsteady hand comes through here rather than as a click. It
+            // should still open the note instead of doing nothing at all.
+            else if (Math.Abs(dy) < DeckButton.ClickSlop) Toggle(note.Id);
             else Render();
         };
     }
@@ -585,6 +771,7 @@ public sealed class DeckController : IDisposable
         _editor = null;
         _editorNoteId = null;
         _editorColor = -1;
+        _editorTop = null;
         _editorOnRight = OnRight;
         _editorIsEmptyDraft = false;
 
@@ -775,7 +962,24 @@ public sealed class DeckController : IDisposable
         return false;
     }
 
-    public void Redraw() => Render();
+    public void Redraw()
+    {
+        // Turning "keep the deck fanned" on or off changes what resting means, so the
+        // deck has to move to the other resting state right away rather than at the
+        // next hover.
+        if (State.Phase == DeckPhase.Rest && Settings.KeepFanned)
+        {
+            SetState(DeckState.Fan);
+            return;
+        }
+        if (State.Phase == DeckPhase.Fan && !Settings.KeepFanned &&
+            !HotZone.Contains(Screens.Cursor))
+        {
+            SetState(DeckState.Rest);
+            return;
+        }
+        Render();
+    }
 
     public void Dispose()
     {

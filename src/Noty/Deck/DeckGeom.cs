@@ -38,49 +38,53 @@ public sealed class DeckLayout
 
 public static class DeckGeom
 {
+    /// Every metric below is quoted at 100% and scaled by one preference, so the
+    /// deck grows or shrinks without drifting out of proportion with itself.
+    public static double Scale => Settings.DeckScale;
+
     // Rest — a 12 px pill of colour dashes
-    public const double PillWidth = 12;
-    public const double DashHeight = 14;
-    public const double DashWidth = 7;
-    public const double DashGap = 5;
-    public const double PillPad = 7;
+    public static double PillWidth => 12 * Scale;
+    public static double DashHeight => 14 * Scale;
+    public static double DashWidth => 7 * Scale;
+    public static double DashGap => 5 * Scale;
+    public static double PillPad => 7 * Scale;
     public const int MaxDashes = 14;
 
     // Fan
-    public const double TabWidth = 30;
-    public const double TabGap = 7;
+    public static double TabWidth => 30 * Scale;
+    public static double TabGap => 7 * Scale;
     /// How far the next tab laps over the one before it.
-    public const double TabLap = 40;
-    public const double PitchMin = 56;
-    public const double PitchMax = 106;
+    public static double TabLap => 40 * Scale;
+    public static double PitchMin => 56 * Scale;
+    public static double PitchMax => 106 * Scale;
     /// The strip is the label plus this much; the label is drawn inside it with
     /// LabelInset. Keeping the two different is what leaves the last glyph room —
     /// sizing the strip to exactly the text width truncates on rounding.
-    public const double LabelPad = 20;
-    public const double LabelInset = 12;
+    public static double LabelPad => 20 * Scale;
+    public static double LabelInset => 12 * Scale;
     /// Tabs and notes are drawn a little past the screen edge so their lean cannot
     /// open a wedge of background between them and the edge they are stuck to.
-    public const double Bleed = 14;
+    public static double Bleed => 14 * Scale;
 
     /// Everything leans the same way — a deck of tabs at matching angles reads as
     /// deliberate, where per-note angles just look scattered.
     public const double LeanDegrees = 3.0;
     public static double Lean(bool onRight) => onRight ? -LeanDegrees : LeanDegrees;
 
-    public const double ChipWidth = 30;
-    public const double ChipHeight = 24;
-    public const double ChipGap = 6;
-    public const double FanWidth = 50;
-    public const double PlusSize = 28;
-    public const double PlusGap = 12;
-    public const double MoreTabHeight = 34;
+    public static double ChipWidth => 30 * Scale;
+    public static double ChipHeight => 24 * Scale;
+    public static double ChipGap => 6 * Scale;
+    public static double FanWidth => 50 * Scale;
+    public static double PlusSize => 28 * Scale;
+    public static double PlusGap => 12 * Scale;
+    public static double MoreTabHeight => 34 * Scale;
 
     /// The deck may claim at most this much of the screen before tabs start shrinking.
     public const double HeightBudget = 0.68;
 
     /// The open note carries its own tab as a left gutter, so it reads as growing
     /// out of the deck rather than floating beside it.
-    public const double GutterWidth = 30;
+    public static double GutterWidth => 30 * Scale;
 
     // Expanded — the note slides clear of the deck
     public const double EditorWidth = 460;
@@ -128,7 +132,7 @@ public static class DeckGeom
                 ItemHeight = ChipHeight,
                 Pitch = ChipHeight + ChipGap,
                 MoreGap = ChipGap,
-                MoreHeight = 22,
+                MoreHeight = 22 * Scale,
                 Count = n,
                 HasMore = hasMore,
                 PanelHeight = panelHeight,
@@ -143,7 +147,7 @@ public static class DeckGeom
         var reserved = hasMore ? MoreTabHeight + TabGap : 0;
         var budget = panelHeight * HeightBudget - reserved;
         if (!allowOverflow && n * pitch + TabLap > budget)
-            pitch = Math.Max(36, (budget - TabLap) / n);
+            pitch = Math.Max(36 * Scale, (budget - TabLap) / n);
 
         return new DeckLayout
         {

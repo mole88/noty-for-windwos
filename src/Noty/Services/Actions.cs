@@ -90,6 +90,18 @@ public static class Actions
         Refresh();
     }
 
+    public static void SetDeckScale(double scale)
+    {
+        Settings.DeckScale = scale;
+        Refresh();
+    }
+
+    public static void ToggleKeepFanned()
+    {
+        Settings.KeepFanned = !Settings.KeepFanned;
+        Refresh();
+    }
+
     public static void ToggleDeckEdge()
     {
         Settings.DeckOnLeftEdge = !Settings.DeckOnLeftEdge;
@@ -160,6 +172,20 @@ public static class Actions
         }
         menu.Items.Add(text);
 
+        var deckSize = new MenuItem { Header = "Deck size" };
+        foreach (var (name, value) in new[]
+                 {
+                     ("Small — 80%", 0.8), ("Standard — 100%", 1.0),
+                     ("Large — 130%", 1.3), ("Extra large — 160%", 1.6),
+                 })
+        {
+            var captured = value;
+            deckSize.Items.Add(Check(name, Math.Abs(Settings.DeckScale - value) < 0.01,
+                () => SetDeckScale(captured)));
+        }
+        menu.Items.Add(deckSize);
+
+        menu.Items.Add(Check("Keep deck fanned out", Settings.KeepFanned, ToggleKeepFanned));
         menu.Items.Add(Check("Dock deck to left edge", Settings.DeckOnLeftEdge, ToggleDeckEdge));
         menu.Items.Add(new Separator());
         menu.Items.Add(Check("Launch at login", Settings.LaunchAtLogin, ToggleLaunchAtLogin));

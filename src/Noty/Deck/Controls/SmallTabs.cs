@@ -24,7 +24,6 @@ public sealed class ChipTab : DeckButton
         });
         RenderTransformOrigin = new Point(onRight ? 1 : 0, 0.5);
         RenderTransform = new RotateTransform(DeckGeom.Lean(onRight) * 0.6);
-        ToolTip = note.DisplayTitle;
     }
 }
 
