@@ -5,11 +5,11 @@ namespace Noty.Core;
 
 /// Observable in-memory model. SQLite is written through on every mutation; the
 /// list is the single source of truth for every window and deck.
-public sealed class NoteStore : INotifyPropertyChanged
+public sealed class NoteStore : INotifyPropertyChanged, IDisposable
 {
     public static NoteStore Shared { get; } = new();
 
-    private readonly Store _store = new();
+    private readonly Store _store;
     private readonly List<Note> _notes;
     private DispatcherTimer? _undoTimer;
 
@@ -37,10 +37,13 @@ public sealed class NoteStore : INotifyPropertyChanged
 
     public event EventHandler? PendingUndoChanged;
 
-    private NoteStore()
+    private NoteStore() : this(new Store(), seedWelcomeNote: true) { }
+
+    internal NoteStore(Store store, bool seedWelcomeNote = false)
     {
+        _store = store;
         _notes = _store.Load();
-        if (_notes.Count == 0) SeedWelcomeNote();
+        if (seedWelcomeNote && _notes.Count == 0) SeedWelcomeNote();
     }
 
     // MARK: Derived collections
@@ -248,5 +251,11 @@ public sealed class NoteStore : INotifyPropertyChanged
 
         Inside a note: Esc closes, Ctrl+F finds, Ctrl+. cycles the colour, Ctrl+Shift+Backspace deletes with ten seconds to undo.
         """, color: 0);
+    }
+
+    public void Dispose()
+    {
+        _undoTimer?.Stop();
+        _store.Dispose();
     }
 }

@@ -4,7 +4,6 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Noty.Core;
@@ -78,34 +77,89 @@ public sealed class NoteTextBox : RichTextBox
         TextChanged += OnTextChanged;
         DataObject.AddPastingHandler(this, OnPasting);
 
-        FollowInputLanguage();
-        Loaded += (_, _) => InputLanguageManager.Current.InputLanguageChanged += OnInputLanguageChanged;
-        Unloaded += (_, _) => InputLanguageManager.Current.InputLanguageChanged -= OnInputLanguageChanged;
+        EnableSpellCheck();
     }
 
-    private void OnInputLanguageChanged(object? sender, InputLanguageEventArgs e) => FollowInputLanguage();
-
-    /// Spell-check in the language being typed.
+    /// Spell-checking follows the text, not the keyboard.
     ///
-    /// WPF leaves `Language` at the framework default no matter what the keyboard is
-    /// set to, so anything but English came back underlined word for word. The view
-    /// follows the layout instead, and checking is switched off outright for a
-    /// language Windows has no dictionary for — no marks at all beats every word
-    /// marked wrong.
-    private void FollowInputLanguage()
+    /// One language for the whole view is the wrong unit: a note written in Russian
+    /// read as English gets underlined word for word, and so does an English word in
+    /// a Russian note. The language is set per run instead, from the script the run
+    /// is actually written in — see Styler. All this has to do is turn checking on.
+    private void EnableSpellCheck()
     {
-        var tag = InputLanguageManager.Current.CurrentInputLanguage?.IetfLanguageTag;
-        if (string.IsNullOrEmpty(tag)) tag = CultureInfo.CurrentCulture.IetfLanguageTag;
-        try
+        SpellCheck.IsEnabled = true;
+        Language = SpellLanguages.ForScript(SpellLanguages.Script.Latin);
+    }
+
+    // MARK: Smooth scrolling
+    //
+    // The wheel is what a note this size is actually read with, and WPF's default is
+    // three whole lines per notch — a jump, not a scroll. The offset is eased towards
+    // a target instead, one step per rendered frame.
+
+    private ScrollViewer? _scroller;
+    private double _scrollTarget;
+    private bool _gliding;
+
+    private const double WheelStep = 0.62;      // pixels per wheel unit
+    private const double Ease = 0.24;           // fraction of the remaining gap per frame
+
+    public override void OnApplyTemplate()
+    {
+        base.OnApplyTemplate();
+        _scroller = GetTemplateChild("PART_ContentHost") as ScrollViewer;
+        if (_scroller is null) return;
+        _scrollTarget = _scroller.VerticalOffset;
+        // Anything that scrolls the view by other means — the scrollbar, the caret
+        // moving — resets where the glide is heading.
+        _scroller.ScrollChanged += (_, _) =>
         {
-            Language = XmlLanguage.GetLanguage(tag);
-        }
-        catch (Exception e)
+            if (!_gliding) _scrollTarget = _scroller.VerticalOffset;
+        };
+    }
+
+    protected override void OnPreviewMouseWheel(MouseWheelEventArgs e)
+    {
+        var sv = _scroller;
+        if (sv is null || sv.ScrollableHeight <= 0)
         {
-            Log.Line($"unknown input language {tag} — {e.Message}");
+            base.OnPreviewMouseWheel(e);
             return;
         }
-        SpellCheck.IsEnabled = SpellLanguages.Supported(tag);
+
+        e.Handled = true;
+        _scrollTarget = Math.Clamp(_scrollTarget - e.Delta * WheelStep, 0, sv.ScrollableHeight);
+        if (_gliding) return;
+        _gliding = true;
+        CompositionTarget.Rendering += Glide;
+    }
+
+    private void Glide(object? sender, EventArgs e)
+    {
+        var sv = _scroller;
+        if (sv is null)
+        {
+            StopGliding();
+            return;
+        }
+
+        var target = Math.Clamp(_scrollTarget, 0, sv.ScrollableHeight);
+        var gap = target - sv.VerticalOffset;
+        if (Math.Abs(gap) < 0.5)
+        {
+            sv.ScrollToVerticalOffset(target);
+            StopGliding();
+            return;
+        }
+        sv.ScrollToVerticalOffset(sv.VerticalOffset + gap * Ease);
+    }
+
+    private void StopGliding()
+    {
+        if (!_gliding) return;
+        _gliding = false;
+        CompositionTarget.Rendering -= Glide;
     }
 
     public string PlainText => DocMap.PlainText(Document);
@@ -151,6 +205,11 @@ public sealed class NoteTextBox : RichTextBox
 
     private void Rebuild(string text, int caret)
     {
+        // Restyling swaps the whole document out, which throws away where the reader
+        // had scrolled to and snaps back to the caret. Reading a long note without
+        // touching the keyboard would jump every time the styler caught up.
+        var keepOffset = _scroller?.VerticalOffset ?? 0;
+
         _suspend = true;
         try
         {
@@ -160,6 +219,18 @@ public sealed class NoteTextBox : RichTextBox
         finally
         {
             _suspend = false;
+        }
+
+        if (keepOffset > 0.5)
+        {
+            Dispatcher.BeginInvoke(() =>
+            {
+                var sv = _scroller;
+                if (sv is null) return;
+                var offset = Math.Clamp(keepOffset, 0, sv.ScrollableHeight);
+                sv.ScrollToVerticalOffset(offset);
+                _scrollTarget = offset;
+            }, DispatcherPriority.Loaded);
         }
     }
 
@@ -378,8 +449,9 @@ public sealed class NoteTextBox : RichTextBox
 
     /// RichTextBox prefers RTF/HTML when both are on the clipboard. Notes are plain
     /// strings, so inserting that document structure would make DocMap skip tables,
-    /// lists and images and the next style pass would silently discard them. Read
-    /// the clipboard's text representation and perform one plain-text edit instead.
+    /// lists and images and the next style pass would silently discard them. Replace
+    /// the paste data with its text representation and let RichTextBox perform the
+    /// edit normally; cancelling the command here also cancels Ctrl+V itself.
     private void OnPasting(object sender, DataObjectPastingEventArgs e)
     {
         string? value = null;
@@ -395,20 +467,18 @@ public sealed class NoteTextBox : RichTextBox
             Log.Line($"clipboard paste failed — {ex.Message}");
         }
 
-        // Suppress every non-text format, including a standalone bitmap.
-        e.CancelCommand();
-        e.Handled = true;
-        if (value is null) return;
+        // Suppress every non-text format, including a standalone bitmap. For text,
+        // preserve WPF's native selection replacement, caret and TextChanged flow.
+        if (value is null)
+        {
+            e.CancelCommand();
+            return;
+        }
 
         value = value.Replace("\r\n", "\n").Replace('\r', '\n');
-        var before = PlainText;
-        var start = DocMap.IndexOf(Document, Selection.Start);
-        var end = DocMap.IndexOf(Document, Selection.End);
-        if (end < start) (start, end) = (end, start);
-        start = Math.Clamp(start, 0, before.Length);
-        end = Math.Clamp(end, start, before.Length);
-
-        SetBody(before.Remove(start, end - start).Insert(start, value), start + value.Length);
+        _editSeries = null;
+        e.DataObject = new DataObject(DataFormats.UnicodeText, value);
+        e.FormatToApply = DataFormats.UnicodeText;
     }
 
     // MARK: Tasks

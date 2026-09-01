@@ -71,6 +71,9 @@ public sealed class DeckController : IDisposable
         _window.Root.PreviewMouseWheel += (_, e) =>
         {
             if (State.Phase == DeckPhase.Rest) return;
+            // Over the open note the wheel belongs to the note's own text. The deck
+            // only takes it out on the tabs.
+            if (_editor is not null && _editor.IsMouseOver) return;
             e.Handled = true;
             Scroll(-e.Delta * 0.45);
         };

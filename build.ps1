@@ -6,10 +6,12 @@
     .\build.ps1 release run  build, then relaunch
     .\build.ps1 publish      single self-contained Noty.exe in .\publish
     .\build.ps1 installer    Inno Setup installer in .\dist
+    .\build.ps1 installer -Version 1.0.2
 #>
 param(
     [string]$Mode = "debug",
-    [string]$Then = ""
+    [string]$Then = "",
+    [string]$Version = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,25 +20,45 @@ $publishDir = Join-Path $PSScriptRoot "publish"
 $installerScript = Join-Path $PSScriptRoot "installer\Noty.iss"
 $distDir = Join-Path $PSScriptRoot "dist"
 
+if ((-not [string]::IsNullOrWhiteSpace($Version)) -and
+    $Version -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
+    throw "Version must contain three or four numeric parts, for example 1.0.2"
+}
+
 function Stop-Noty {
     Get-Process Noty -ErrorAction SilentlyContinue | Stop-Process -Force
 }
 
 function Publish-Noty {
     Stop-Noty
-    dotnet publish $project -c Release -r win-x64 --self-contained true `
-        -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-        -p:DebugType=None -p:DebugSymbols=false -o $publishDir
+    $publishArguments = @(
+        "publish", $project,
+        "-c", "Release",
+        "-r", "win-x64",
+        "--self-contained", "true",
+        "-p:PublishSingleFile=true",
+        "-p:IncludeNativeLibrariesForSelfExtract=true",
+        "-p:DebugType=None",
+        "-p:DebugSymbols=false",
+        "-o", $publishDir
+    )
+    if (-not [string]::IsNullOrWhiteSpace($Version)) {
+        $publishArguments += "-p:Version=$Version"
+    }
+
+    & dotnet @publishArguments
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
     Copy-Item (Join-Path $PSScriptRoot "LICENSE") $publishDir -Force
 }
 
 function Get-ProjectVersion {
-    $version = (& dotnet msbuild $project --nologo -getProperty:Version | Select-Object -Last 1).Trim()
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($version)) {
+    if (-not [string]::IsNullOrWhiteSpace($Version)) { return $Version }
+
+    $projectVersion = (& dotnet msbuild $project --nologo -getProperty:Version | Select-Object -Last 1).Trim()
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($projectVersion)) {
         throw "Could not read the application version from Noty.csproj"
     }
-    return $version
+    return $projectVersion
 }
 
 function Find-InnoCompiler {
@@ -64,12 +86,12 @@ switch ($Mode.ToLower()) {
     }
     "installer" {
         Publish-Noty
-        $version = Get-ProjectVersion
+        $resolvedVersion = Get-ProjectVersion
         $iscc = Find-InnoCompiler
         New-Item -ItemType Directory -Path $distDir -Force | Out-Null
-        & $iscc "/DMyAppVersion=$version" "/DPublishDir=$publishDir" "/O$distDir" $installerScript
+        & $iscc "/DMyAppVersion=$resolvedVersion" "/DPublishDir=$publishDir" "/O$distDir" $installerScript
         if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed" }
-        Write-Host (Join-Path $distDir "Noty-Setup-$version.exe")
+        Write-Host (Join-Path $distDir "Noty-Setup-$resolvedVersion.exe")
     }
     "release" {
         Stop-Noty

@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Media;
 using Noty.Core;
+using Noty.Interop;
 
 namespace Noty.Editor;
 
@@ -157,9 +158,15 @@ public static class Styler
             start = 1;
         }
 
+        var scripts = ScriptsOf(line);
+
         for (var i = start + 1; i <= line.Length; i++)
         {
-            if (i < line.Length && attrs[i].Equals(attrs[start])) continue;
+            // A run breaks on a change of style *or* of writing system: the run is
+            // what carries the language the spell checker uses, and one language for
+            // the whole note means the other one is underlined word for word.
+            if (i < line.Length && attrs[i].Equals(attrs[start]) && scripts[i] == scripts[start])
+                continue;
             var a = attrs[start];
             var run = new Run(line[start..i])
             {
@@ -167,6 +174,7 @@ public static class Styler
                 FontSize = a.Dim ? HiddenMarkerSize : fontSize,
                 FontWeight = a.Bold || lineBold ? FontWeights.Bold : FontWeights.Normal,
                 FontStyle = a.Italic || lineItalic ? FontStyles.Italic : FontStyles.Normal,
+                Language = SpellLanguages.ForScript(scripts[start]),
             };
             if (a.Code)
             {
@@ -179,6 +187,38 @@ public static class Styler
             start = i;
         }
         return p;
+    }
+
+    /// The script of every character, with digits, punctuation and spaces taking the
+    /// script of the text they sit among — so "Что тебе надо?" stays one run and does
+    /// not break at the question mark.
+    private static SpellLanguages.Script[] ScriptsOf(string line)
+    {
+        var scripts = new SpellLanguages.Script[line.Length];
+        var carried = SpellLanguages.Script.Neutral;
+        var firstLetter = -1;
+
+        for (var i = 0; i < line.Length; i++)
+        {
+            var s = SpellLanguages.ScriptOf(line[i]);
+            if (s == SpellLanguages.Script.Neutral)
+            {
+                scripts[i] = carried;
+            }
+            else
+            {
+                scripts[i] = s;
+                carried = s;
+                if (firstLetter < 0) firstLetter = i;
+            }
+        }
+
+        // Whatever came before the first letter belongs with it, not with nothing.
+        if (firstLetter > 0)
+            for (var i = 0; i < firstLetter; i++)
+                scripts[i] = scripts[firstLetter];
+
+        return scripts;
     }
 
     private static void Apply(CharStyle[] attrs, Group g, Func<CharStyle, CharStyle> f)

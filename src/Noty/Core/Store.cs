@@ -8,11 +8,11 @@ public sealed class Store : IDisposable
 {
     private readonly SqliteConnection _db;
 
-    public Store()
+    public Store(string? dataSource = null)
     {
         _db = new SqliteConnection(new SqliteConnectionStringBuilder
         {
-            DataSource = Paths.Db,
+            DataSource = dataSource ?? Paths.Db,
             Mode = SqliteOpenMode.ReadWriteCreate,
             Cache = SqliteCacheMode.Shared,
         }.ToString());

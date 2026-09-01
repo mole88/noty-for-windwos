@@ -9,9 +9,10 @@ public static class Paths
 
     private static string Init()
     {
-        var dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Noty");
+        var overridden = Environment.GetEnvironmentVariable("NOTY_DATA_DIR");
+        var dir = string.IsNullOrWhiteSpace(overridden)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Noty")
+            : Path.GetFullPath(overridden);
         Directory.CreateDirectory(dir);
         return dir;
     }

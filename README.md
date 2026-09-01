@@ -88,6 +88,12 @@ To create a self-contained executable:
 
 The result is written to `publish\` together with the license.
 
+To run the automated test suite:
+
+```powershell
+dotnet test .\Noty.slnx -c Release
+```
+
 To build a Windows installer with Inno Setup 6 or 7:
 
 ```powershell
